@@ -1,0 +1,145 @@
+openapi: 3.0.3
+info:
+  title: Team Task API
+  version: 1.0.0
+  description: REST API для управления задачами внутри команд.
+servers:
+  - url: /
+paths:
+  /api/v1/register:
+    post:
+      summary: Регистрация пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+      responses:
+        "201": { description: Пользователь зарегистрирован }
+        "409": { description: Email уже занят }
+  /api/v1/login:
+    post:
+      summary: Вход и получение JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: JWT access token }
+        "401": { description: Неверные учетные данные }
+  /api/v1/teams:
+    post:
+      summary: Создать команду
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Команда создана, создатель назначен owner }
+    get:
+      summary: Список команд пользователя
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Команды, в которых состоит пользователь }
+  /api/v1/teams/{id}/invite:
+    post:
+      summary: Пригласить участника по user_id
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "204": { description: Участник добавлен }
+  /api/v1/teams/{id}/members/{user_id}:
+    put:
+      summary: Изменить роль участника (только owner)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+        - { in: path, name: user_id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Роль изменена }
+    delete:
+      summary: Удалить участника (owner/admin; owner команды защищен)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+        - { in: path, name: user_id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Участник удален }
+  /api/v1/tasks:
+    post:
+      summary: Создать задачу
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Задача создана вместе с записью истории }
+    get:
+      summary: Список задач команды
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: team_id, required: true, schema: { type: integer } }
+        - { in: query, name: status, schema: { type: string, enum: [todo, in_progress, done] } }
+        - { in: query, name: assignee_id, schema: { type: integer } }
+        - { in: query, name: limit, schema: { type: integer, default: 20, maximum: 100 } }
+        - { in: query, name: offset, schema: { type: integer, default: 0 } }
+      responses:
+        "200": { description: Задачи команды; кэш Redis TTL 5 минут }
+  /api/v1/tasks/{id}:
+    put:
+      summary: Обновить задачу с optimistic locking
+      description: Передавайте текущую version. assignee_id=0 снимает исполнителя.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Задача обновлена; версия увеличена }
+        "409": { description: Версия устарела }
+  /api/v1/tasks/{id}/history:
+    get:
+      summary: История изменений задачи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: История доступна участникам команды }
+  /api/v1/tasks/{id}/comments:
+    get:
+      summary: Список комментариев задачи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Комментарии задачи }
+    post:
+      summary: Добавить комментарий
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "201": { description: Комментарий добавлен }
+  /api/v1/teams/{team_id}/stats:
+    get:
+      summary: SQL-отчет команды
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: team_id, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Статистика задач, исполнителей, сроков и комментариев }
+        "403": { description: Доступно owner/admin }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
