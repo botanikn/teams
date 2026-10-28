@@ -30,3 +30,23 @@ func TestJWTIssuerRoundTripAndRejectsOtherAlgorithms(t *testing.T) {
 		t.Fatal("Parse() accepted a token signed with HS512")
 	}
 }
+
+func TestJWTIssuerRejectsExpiredToken(t *testing.T) {
+	const secret = "this-secret-is-at-least-thirty-two-characters-long"
+	issuer := NewJWTIssuer(secret, time.Minute)
+	now := time.Now()
+	expired := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Subject:   "42",
+		Issuer:    "task-api",
+		IssuedAt:  jwt.NewNumericDate(now.Add(-2 * time.Hour)),
+		ExpiresAt: jwt.NewNumericDate(now.Add(-time.Hour)),
+	})
+	raw, err := expired.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := issuer.Parse(raw); err == nil {
+		t.Fatal("Parse() accepted an expired token")
+	}
+}

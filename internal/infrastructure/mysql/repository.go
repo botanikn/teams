@@ -39,8 +39,10 @@ func (r *Repository) CreateAtomic(ctx context.Context, team *domain.Team) error 
 }
 
 func (r *Repository) ListForUser(ctx context.Context, userID int64) ([]domain.Team, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT t.id, t.name, t.created_by, m.role, t.created_at
-		FROM teams t JOIN team_members m ON m.team_id = t.id
+	rows, err := r.db.QueryContext(ctx, `SELECT t.id, t.name, u.name, t.created_at
+		FROM teams t
+		JOIN team_members m ON m.team_id = t.id
+		JOIN users u ON u.id = t.created_by
 		WHERE m.user_id = ? ORDER BY t.id`, userID)
 	if err != nil {
 		return nil, err
@@ -49,7 +51,7 @@ func (r *Repository) ListForUser(ctx context.Context, userID int64) ([]domain.Te
 	teams := make([]domain.Team, 0)
 	for rows.Next() {
 		var team domain.Team
-		if err := rows.Scan(&team.ID, &team.Name, &team.CreatedBy, &team.Role, &team.CreatedAt); err != nil {
+		if err := rows.Scan(&team.ID, &team.Name, &team.OwnerName, &team.CreatedAt); err != nil {
 			return nil, err
 		}
 		teams = append(teams, team)
@@ -118,8 +120,9 @@ func (r *Repository) Create(ctx context.Context, task *domain.Task, changedBy in
 		return err
 	}
 	var closed sql.NullTime
-	if err := tx.QueryRowContext(ctx, `SELECT created_at, updated_at, closed_at FROM tasks WHERE id = ?`, task.ID).
-		Scan(&task.CreatedAt, &task.UpdatedAt, &closed); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT t.created_at, t.updated_at, t.closed_at, u.name
+		FROM tasks t JOIN users u ON u.id = t.created_by WHERE t.id = ?`, task.ID).
+		Scan(&task.CreatedAt, &task.UpdatedAt, &closed, &task.CreatedByName); err != nil {
 		return err
 	}
 	if closed.Valid {
@@ -141,18 +144,18 @@ func (r *Repository) Create(ctx context.Context, task *domain.Task, changedBy in
 }
 
 func (r *Repository) List(ctx context.Context, filter domain.TaskFilter) ([]domain.Task, error) {
-	query := `SELECT id, team_id, title, description, status, created_by, assignee_id, created_at, updated_at, closed_at, version
-		FROM tasks WHERE team_id = ?`
+	query := `SELECT t.id, t.team_id, t.title, t.description, t.status, t.created_by, u.name, t.assignee_id, t.created_at, t.updated_at, t.closed_at, t.version
+		FROM tasks t JOIN users u ON u.id = t.created_by WHERE t.team_id = ?`
 	args := []any{filter.TeamID}
 	if filter.Status != "" {
-		query += ` AND status = ?`
+		query += ` AND t.status = ?`
 		args = append(args, filter.Status)
 	}
 	if filter.AssigneeID > 0 {
-		query += ` AND assignee_id = ?`
+		query += ` AND t.assignee_id = ?`
 		args = append(args, filter.AssigneeID)
 	}
-	query += ` ORDER BY id DESC LIMIT ? OFFSET ?`
+	query += ` ORDER BY t.id DESC LIMIT ? OFFSET ?`
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -176,7 +179,7 @@ func scanTask(row rowScanner) (domain.Task, error) {
 	var task domain.Task
 	var assignee sql.NullInt64
 	var closed sql.NullTime
-	if err := row.Scan(&task.ID, &task.TeamID, &task.Title, &task.Description, &task.Status, &task.CreatedBy, &assignee, &task.CreatedAt, &task.UpdatedAt, &closed, &task.Version); err != nil {
+	if err := row.Scan(&task.ID, &task.TeamID, &task.Title, &task.Description, &task.Status, &task.CreatedBy, &task.CreatedByName, &assignee, &task.CreatedAt, &task.UpdatedAt, &closed, &task.Version); err != nil {
 		return task, err
 	}
 	if assignee.Valid {
@@ -189,7 +192,8 @@ func scanTask(row rowScanner) (domain.Task, error) {
 }
 
 func (r *Repository) FindByID(ctx context.Context, id int64) (*domain.Task, error) {
-	task, err := scanTask(r.db.QueryRowContext(ctx, `SELECT id, team_id, title, description, status, created_by, assignee_id, created_at, updated_at, closed_at, version FROM tasks WHERE id = ?`, id))
+	task, err := scanTask(r.db.QueryRowContext(ctx, `SELECT t.id, t.team_id, t.title, t.description, t.status, t.created_by, u.name, t.assignee_id, t.created_at, t.updated_at, t.closed_at, t.version
+		FROM tasks t JOIN users u ON u.id = t.created_by WHERE t.id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}
@@ -298,7 +302,11 @@ func ensureTeamMember(ctx context.Context, queryer executor, teamID, userID int6
 }
 
 func (r *Repository) ListHistory(ctx context.Context, taskID int64) ([]domain.TaskHistory, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, task_id, changed_by, changes, created_at FROM task_history WHERE task_id = ? ORDER BY id`, taskID)
+	rows, err := r.db.QueryContext(ctx, `SELECT h.id, h.task_id, h.changed_by, h.changes, h.created_at, u.name
+		FROM task_history h
+		JOIN tasks t ON t.id = h.task_id
+		JOIN users u ON u.id = t.created_by
+		WHERE h.task_id = ? ORDER BY h.id`, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -306,12 +314,49 @@ func (r *Repository) ListHistory(ctx context.Context, taskID int64) ([]domain.Ta
 	history := make([]domain.TaskHistory, 0)
 	for rows.Next() {
 		var item domain.TaskHistory
-		if err := rows.Scan(&item.ID, &item.TaskID, &item.ChangedBy, &item.Changes, &item.CreatedAt); err != nil {
+		var creatorName string
+		if err := rows.Scan(&item.ID, &item.TaskID, &item.ChangedBy, &item.Changes, &item.CreatedAt, &creatorName); err != nil {
+			return nil, err
+		}
+		item.Changes, err = replaceHistoryCreatorID(item.Changes, creatorName)
+		if err != nil {
 			return nil, err
 		}
 		history = append(history, item)
 	}
 	return history, rows.Err()
+}
+
+func replaceHistoryCreatorID(changes json.RawMessage, creatorName string) (json.RawMessage, error) {
+	var entries map[string]json.RawMessage
+	if err := json.Unmarshal(changes, &entries); err != nil {
+		return nil, fmt.Errorf("decode task history changes: %w", err)
+	}
+	rawTask, ok := entries["new"]
+	if !ok {
+		return changes, nil
+	}
+	var task map[string]json.RawMessage
+	if err := json.Unmarshal(rawTask, &task); err != nil {
+		return nil, fmt.Errorf("decode task history snapshot: %w", err)
+	}
+	if _, ok := task["created_by"]; !ok {
+		return changes, nil
+	}
+	rawCreatorName, err := json.Marshal(creatorName)
+	if err != nil {
+		return nil, fmt.Errorf("encode task creator name: %w", err)
+	}
+	task["created_by"] = rawCreatorName
+	entries["new"], err = json.Marshal(task)
+	if err != nil {
+		return nil, fmt.Errorf("encode task history snapshot: %w", err)
+	}
+	updated, err := json.Marshal(entries)
+	if err != nil {
+		return nil, fmt.Errorf("encode task history changes: %w", err)
+	}
+	return updated, nil
 }
 
 func (r *Repository) AddComment(ctx context.Context, comment *domain.TaskComment) error {

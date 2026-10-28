@@ -22,7 +22,7 @@ func (s *TeamService) Create(ctx context.Context, userID int64, name string) (*d
 	if name == "" || len(name) > 150 {
 		return nil, domain.ErrInvalid
 	}
-	team := &domain.Team{Name: name, CreatedBy: userID, Role: domain.RoleOwner}
+	team := &domain.Team{Name: name, CreatedBy: userID}
 	if err := s.teams.CreateAtomic(ctx, team); err != nil {
 		return nil, err
 	}
