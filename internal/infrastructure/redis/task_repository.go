@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
 	"task-api/internal/domain/ports"
 )
 
@@ -31,7 +31,7 @@ func NewCachedTaskRepository(next ports.TaskRepository, history ports.TaskHistor
 	return &CachedTaskRepository{next: next, history: history, comments: comments, stats: stats, cache: cache}
 }
 
-func (r *CachedTaskRepository) Create(ctx context.Context, task *domain.Task, changedBy int64) error {
+func (r *CachedTaskRepository) Create(ctx context.Context, task *entities.Task, changedBy int64) error {
 	if err := r.next.Create(ctx, task, changedBy); err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func (r *CachedTaskRepository) Create(ctx context.Context, task *domain.Task, ch
 	return nil
 }
 
-func (r *CachedTaskRepository) List(ctx context.Context, filter domain.TaskFilter) ([]domain.Task, error) {
+func (r *CachedTaskRepository) List(ctx context.Context, filter entities.TaskFilter) ([]entities.Task, error) {
 	versionKey := fmt.Sprintf("task-list-version:%d", filter.TeamID)
 	version, err := r.cache.Get(ctx, versionKey).Result()
 	if err == redis.Nil {
@@ -78,7 +78,7 @@ func (r *CachedTaskRepository) List(ctx context.Context, filter domain.TaskFilte
 	return tasks, nil
 }
 
-func (r *CachedTaskRepository) FindByID(ctx context.Context, id int64) (*domain.Task, error) {
+func (r *CachedTaskRepository) FindByID(ctx context.Context, id int64) (*entities.Task, error) {
 	key := fmt.Sprintf("task:%d", id)
 	cached, err := r.cache.Get(ctx, key).Bytes()
 	if err == nil {
@@ -106,7 +106,7 @@ func (r *CachedTaskRepository) FindByID(ctx context.Context, id int64) (*domain.
 	return task, nil
 }
 
-func (r *CachedTaskRepository) UpdateAtomic(ctx context.Context, task *domain.Task, actorID, expectedVersion int64, changes json.RawMessage) error {
+func (r *CachedTaskRepository) UpdateAtomic(ctx context.Context, task *entities.Task, actorID, expectedVersion int64, changes json.RawMessage) error {
 	if err := r.next.UpdateAtomic(ctx, task, actorID, expectedVersion, changes); err != nil {
 		return err
 	}
@@ -126,11 +126,11 @@ func (r *CachedTaskRepository) CheckVersion(ctx context.Context, taskID, expecte
 	return r.next.CheckVersion(ctx, taskID, expectedVersion)
 }
 
-func (r *CachedTaskRepository) ListHistory(ctx context.Context, taskID int64) ([]domain.TaskHistory, error) {
+func (r *CachedTaskRepository) ListHistory(ctx context.Context, taskID int64) ([]entities.TaskHistory, error) {
 	key := fmt.Sprintf("task-history:%d", taskID)
 	cached, err := r.cache.Get(ctx, key).Bytes()
 	if err == nil {
-		var history []domain.TaskHistory
+		var history []entities.TaskHistory
 		if err := json.Unmarshal(cached, &history); err != nil {
 			return nil, fmt.Errorf("decode cached task history: %w", err)
 		}
@@ -154,7 +154,7 @@ func (r *CachedTaskRepository) ListHistory(ctx context.Context, taskID int64) ([
 	return history, nil
 }
 
-func (r *CachedTaskRepository) AddComment(ctx context.Context, comment *domain.TaskComment) error {
+func (r *CachedTaskRepository) AddComment(ctx context.Context, comment *entities.TaskComment) error {
 	if err := r.comments.AddComment(ctx, comment); err != nil {
 		return err
 	}
@@ -164,11 +164,11 @@ func (r *CachedTaskRepository) AddComment(ctx context.Context, comment *domain.T
 	return nil
 }
 
-func (r *CachedTaskRepository) ListComments(ctx context.Context, taskID int64) ([]domain.TaskComment, error) {
+func (r *CachedTaskRepository) ListComments(ctx context.Context, taskID int64) ([]entities.TaskComment, error) {
 	key := fmt.Sprintf("task-comments:%d", taskID)
 	cached, err := r.cache.Get(ctx, key).Bytes()
 	if err == nil {
-		var comments []domain.TaskComment
+		var comments []entities.TaskComment
 		if err := json.Unmarshal(cached, &comments); err != nil {
 			return nil, fmt.Errorf("decode cached task comments: %w", err)
 		}
@@ -192,7 +192,7 @@ func (r *CachedTaskRepository) ListComments(ctx context.Context, taskID int64) (
 	return comments, nil
 }
 
-func (r *CachedTaskRepository) TeamStats(ctx context.Context, teamID int64) (*domain.TeamStats, error) {
+func (r *CachedTaskRepository) TeamStats(ctx context.Context, teamID int64) (*entities.TeamStats, error) {
 	return r.stats.TeamStats(ctx, teamID)
 }
 
@@ -204,15 +204,15 @@ func (r *CachedTaskRepository) InvalidateTaskLists(ctx context.Context, teamID i
 }
 
 type cachedTask struct {
-	Task      *domain.Task `json:"task"`
-	CreatedBy int64        `json:"created_by_id"`
+	Task      *entities.Task `json:"task"`
+	CreatedBy int64          `json:"created_by_id"`
 }
 
-func encodeCachedTask(task *domain.Task) ([]byte, error) {
+func encodeCachedTask(task *entities.Task) ([]byte, error) {
 	return json.Marshal(cachedTask{Task: task, CreatedBy: task.CreatedBy})
 }
 
-func decodeCachedTask(raw []byte) (*domain.Task, error) {
+func decodeCachedTask(raw []byte) (*entities.Task, error) {
 	var cached cachedTask
 	if err := json.Unmarshal(raw, &cached); err != nil {
 		return nil, err
@@ -224,7 +224,7 @@ func decodeCachedTask(raw []byte) (*domain.Task, error) {
 	return cached.Task, nil
 }
 
-func encodeCachedTasks(tasks []domain.Task) ([]byte, error) {
+func encodeCachedTasks(tasks []entities.Task) ([]byte, error) {
 	cached := make([]cachedTask, len(tasks))
 	for i := range tasks {
 		cached[i] = cachedTask{Task: &tasks[i], CreatedBy: tasks[i].CreatedBy}
@@ -232,12 +232,12 @@ func encodeCachedTasks(tasks []domain.Task) ([]byte, error) {
 	return json.Marshal(cached)
 }
 
-func decodeCachedTasks(raw []byte) ([]domain.Task, error) {
+func decodeCachedTasks(raw []byte) ([]entities.Task, error) {
 	var cached []cachedTask
 	if err := json.Unmarshal(raw, &cached); err != nil {
 		return nil, err
 	}
-	tasks := make([]domain.Task, len(cached))
+	tasks := make([]entities.Task, len(cached))
 	for i := range cached {
 		if cached[i].Task == nil {
 			return nil, fmt.Errorf("cached task at index %d is missing", i)

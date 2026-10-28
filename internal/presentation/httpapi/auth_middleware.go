@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"task-api/internal/domain"
+	"task-api/internal/domain/errrors"
 	"task-api/internal/domain/ports"
 )
 
@@ -17,12 +17,12 @@ func authenticate(tokens ports.TokenIssuer, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := strings.Fields(r.Header.Get("Authorization"))
 		if len(header) != 2 || !strings.EqualFold(header[0], "Bearer") {
-			writeError(w, domain.ErrUnauthenticated)
+			writeError(w, errrors.ErrUnauthenticated)
 			return
 		}
 		userID, err := tokens.Parse(header[1])
 		if err != nil {
-			writeError(w, domain.ErrUnauthenticated)
+			writeError(w, errrors.ErrUnauthenticated)
 			return
 		}
 		ctx := context.WithValue(r.Context(), userIDKey, userID)

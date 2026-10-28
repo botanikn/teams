@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
 )
 
 func TestCachedTaskPreservesCreatorID(t *testing.T) {
-	task := &domain.Task{ID: 1, CreatedBy: 42, CreatedByName: "Alice"}
+	task := &entities.Task{ID: 1, CreatedBy: 42, CreatedByName: "Alice"}
 	encoded, err := encodeCachedTask(task)
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +23,7 @@ func TestCachedTaskPreservesCreatorID(t *testing.T) {
 }
 
 func TestCachedTaskListPreservesCreatorID(t *testing.T) {
-	tasks := []domain.Task{
+	tasks := []entities.Task{
 		{ID: 1, CreatedBy: 42, CreatedByName: "Alice"},
 		{ID: 2, CreatedBy: 43, CreatedByName: "Bob"},
 	}

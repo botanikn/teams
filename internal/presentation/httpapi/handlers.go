@@ -9,7 +9,8 @@ import (
 	"strconv"
 
 	"task-api/internal/application"
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
+	"task-api/internal/domain/errrors"
 	"task-api/internal/domain/ports"
 )
 
@@ -117,14 +118,14 @@ func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		UserID int64       `json:"user_id"`
-		Role   domain.Role `json:"role"`
+		UserID int64         `json:"user_id"`
+		Role   entities.Role `json:"role"`
 	}
 	if !decodeJSON(w, r, &request) {
 		return
 	}
 	if request.UserID <= 0 {
-		writeError(w, domain.ErrInvalid)
+		writeError(w, errrors.ErrInvalid)
 		return
 	}
 	if err := h.teams.Invite(r.Context(), currentUserID(r), teamID, request.UserID, request.Role); err != nil {
@@ -144,7 +145,7 @@ func (h *Handler) updateMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Role domain.Role `json:"role"`
+		Role entities.Role `json:"role"`
 	}
 	if !decodeJSON(w, r, &request) {
 		return
@@ -184,7 +185,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.TeamID <= 0 {
-		writeError(w, domain.ErrInvalid)
+		writeError(w, errrors.ErrInvalid)
 		return
 	}
 	if request.Status == "" {
@@ -202,25 +203,25 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	teamID, err := queryInt64(query.Get("team_id"), 0)
 	if err != nil || teamID <= 0 {
-		writeError(w, domain.ErrInvalid)
+		writeError(w, errrors.ErrInvalid)
 		return
 	}
 	assigneeID, err := queryInt64(query.Get("assignee_id"), 0)
 	if err != nil || assigneeID < 0 {
-		writeError(w, domain.ErrInvalid)
+		writeError(w, errrors.ErrInvalid)
 		return
 	}
 	limit, err := queryInt(query.Get("limit"), 20)
 	if err != nil {
-		writeError(w, domain.ErrInvalid)
+		writeError(w, errrors.ErrInvalid)
 		return
 	}
 	offset, err := queryInt(query.Get("offset"), 0)
 	if err != nil {
-		writeError(w, domain.ErrInvalid)
+		writeError(w, errrors.ErrInvalid)
 		return
 	}
-	tasks, err := h.tasks.List(r.Context(), currentUserID(r), domain.TaskFilter{
+	tasks, err := h.tasks.List(r.Context(), currentUserID(r), entities.TaskFilter{
 		TeamID: teamID, Status: query.Get("status"), AssigneeID: assigneeID, Limit: limit, Offset: offset,
 	})
 	if err != nil {
@@ -245,7 +246,7 @@ func (h *Handler) updateTask(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &request) {
 		return
 	}
-	task, err := h.tasks.Update(r.Context(), currentUserID(r), taskID, request.Version, domain.TaskChange{
+	task, err := h.tasks.Update(r.Context(), currentUserID(r), taskID, request.Version, entities.TaskChange{
 		Title: request.Title, Description: request.Description, Status: request.Status, AssigneeID: request.AssigneeID,
 	})
 	if err != nil {
@@ -331,7 +332,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, domain.ErrInvalid)
+		writeError(w, errrors.ErrInvalid)
 		return 0, false
 	}
 	return id, true
@@ -355,15 +356,15 @@ func writeError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	message := "internal server error"
 	switch {
-	case errors.Is(err, domain.ErrInvalid):
+	case errors.Is(err, errrors.ErrInvalid):
 		status, message = http.StatusBadRequest, "invalid input"
-	case errors.Is(err, domain.ErrUnauthenticated):
+	case errors.Is(err, errrors.ErrUnauthenticated):
 		status, message = http.StatusUnauthorized, "authentication required"
-	case errors.Is(err, domain.ErrForbidden):
+	case errors.Is(err, errrors.ErrForbidden):
 		status, message = http.StatusForbidden, "access denied"
-	case errors.Is(err, domain.ErrNotFound):
+	case errors.Is(err, errrors.ErrNotFound):
 		status, message = http.StatusNotFound, "resource not found"
-	case errors.Is(err, domain.ErrConflict):
+	case errors.Is(err, errrors.ErrConflict):
 		status, message = http.StatusConflict, "resource conflict or stale version"
 	default:
 		slog.Error("request failed", "error", err)

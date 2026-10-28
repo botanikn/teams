@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
+	"task-api/internal/domain/errrors"
 	"task-api/internal/domain/ports"
 )
 
@@ -22,14 +23,14 @@ func NewTaskService(tasks ports.TaskRepository, history ports.TaskHistoryReposit
 	return &TaskService{tasks: tasks, history: history, comments: comments, stats: stats, teams: teams}
 }
 
-func (s *TaskService) Create(ctx context.Context, actorID, teamID int64, title, description, status string, assigneeID *int64) (*domain.Task, error) {
+func (s *TaskService) Create(ctx context.Context, actorID, teamID int64, title, description, status string, assigneeID *int64) (*entities.Task, error) {
 	if strings.TrimSpace(title) == "" || len(strings.TrimSpace(title)) > 255 || len(description) > 65535 || !validStatus(status) {
-		return nil, domain.ErrInvalid
+		return nil, errrors.ErrInvalid
 	}
 	if _, err := s.teams.RoleForUser(ctx, teamID, actorID); err != nil {
 		return nil, err
 	}
-	task := &domain.Task{
+	task := &entities.Task{
 		TeamID: teamID, Title: strings.TrimSpace(title), Description: description,
 		Status: status, CreatedBy: actorID, AssigneeID: assigneeID,
 	}
@@ -39,28 +40,28 @@ func (s *TaskService) Create(ctx context.Context, actorID, teamID int64, title, 
 	return task, nil
 }
 
-func (s *TaskService) List(ctx context.Context, actorID int64, filter domain.TaskFilter) ([]domain.Task, error) {
+func (s *TaskService) List(ctx context.Context, actorID int64, filter entities.TaskFilter) ([]entities.Task, error) {
 	if filter.TeamID <= 0 {
-		return nil, domain.ErrInvalid
+		return nil, errrors.ErrInvalid
 	}
 	if _, err := s.teams.RoleForUser(ctx, filter.TeamID, actorID); err != nil {
 		return nil, err
 	}
 	if filter.Status != "" && !validStatus(filter.Status) {
-		return nil, domain.ErrInvalid
+		return nil, errrors.ErrInvalid
 	}
 	if filter.Limit == 0 {
 		filter.Limit = 20
 	}
 	if filter.Limit < 0 || filter.Limit > 100 || filter.Offset < 0 || filter.AssigneeID < 0 {
-		return nil, domain.ErrInvalid
+		return nil, errrors.ErrInvalid
 	}
 	return s.tasks.List(ctx, filter)
 }
 
-func (s *TaskService) Update(ctx context.Context, actorID, taskID, version int64, change domain.TaskChange) (*domain.Task, error) {
+func (s *TaskService) Update(ctx context.Context, actorID, taskID, version int64, change entities.TaskChange) (*entities.Task, error) {
 	if version <= 0 || (change.Title == nil && change.Description == nil && change.Status == nil && change.AssigneeID == nil) {
-		return nil, domain.ErrInvalid
+		return nil, errrors.ErrInvalid
 	}
 	task, err := s.tasks.FindByID(ctx, taskID)
 	if err != nil {
@@ -70,13 +71,13 @@ func (s *TaskService) Update(ctx context.Context, actorID, taskID, version int64
 	if err != nil {
 		return nil, err
 	}
-	canEditAny := role == domain.RoleOwner || role == domain.RoleAdmin
+	canEditAny := role == entities.RoleOwner || role == entities.RoleAdmin
 	isCreator, isAssignee := task.CreatedBy == actorID, task.AssigneeID != nil && *task.AssigneeID == actorID
 	if !canEditAny && !isCreator && !isAssignee {
-		return nil, domain.ErrForbidden
+		return nil, errrors.ErrForbidden
 	}
 	if isAssignee && !isCreator && !canEditAny && (change.Title != nil || change.Description != nil || change.AssigneeID != nil) {
-		return nil, domain.ErrForbidden
+		return nil, errrors.ErrForbidden
 	}
 	changes := make(map[string]any)
 	addChange := func(key string, oldValue, newValue any) error {
@@ -89,28 +90,28 @@ func (s *TaskService) Update(ctx context.Context, actorID, taskID, version int64
 	if change.Title != nil {
 		value := strings.TrimSpace(*change.Title)
 		if value == "" || len(value) > 255 {
-			return nil, domain.ErrInvalid
+			return nil, errrors.ErrInvalid
 		}
 		addChange("title", task.Title, value)
 		task.Title = value
 	}
 	if change.Description != nil {
 		if len(*change.Description) > 65535 {
-			return nil, domain.ErrInvalid
+			return nil, errrors.ErrInvalid
 		}
 		addChange("description", task.Description, *change.Description)
 		task.Description = *change.Description
 	}
 	if change.Status != nil {
 		if !validStatus(*change.Status) {
-			return nil, domain.ErrInvalid
+			return nil, errrors.ErrInvalid
 		}
 		addChange("status", task.Status, *change.Status)
 		task.Status = *change.Status
 	}
 	if change.AssigneeID != nil {
 		if *change.AssigneeID < 0 {
-			return nil, domain.ErrInvalid
+			return nil, errrors.ErrInvalid
 		}
 		var oldAssignee any
 		if task.AssigneeID != nil {
@@ -142,7 +143,7 @@ func (s *TaskService) Update(ctx context.Context, actorID, taskID, version int64
 	return task, nil
 }
 
-func (s *TaskService) History(ctx context.Context, actorID, taskID int64) ([]domain.TaskHistory, error) {
+func (s *TaskService) History(ctx context.Context, actorID, taskID int64) ([]entities.TaskHistory, error) {
 	task, err := s.tasks.FindByID(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -153,7 +154,7 @@ func (s *TaskService) History(ctx context.Context, actorID, taskID int64) ([]dom
 	return s.history.ListHistory(ctx, taskID)
 }
 
-func (s *TaskService) AddComment(ctx context.Context, actorID, taskID int64, content string) (*domain.TaskComment, error) {
+func (s *TaskService) AddComment(ctx context.Context, actorID, taskID int64, content string) (*entities.TaskComment, error) {
 	task, err := s.tasks.FindByID(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -163,16 +164,16 @@ func (s *TaskService) AddComment(ctx context.Context, actorID, taskID int64, con
 	}
 	content = strings.TrimSpace(content)
 	if content == "" || len(content) > 10000 {
-		return nil, domain.ErrInvalid
+		return nil, errrors.ErrInvalid
 	}
-	comment := &domain.TaskComment{TaskID: taskID, UserID: actorID, Content: content}
+	comment := &entities.TaskComment{TaskID: taskID, UserID: actorID, Content: content}
 	if err := s.comments.AddComment(ctx, comment); err != nil {
 		return nil, err
 	}
 	return comment, nil
 }
 
-func (s *TaskService) Comments(ctx context.Context, actorID, taskID int64) ([]domain.TaskComment, error) {
+func (s *TaskService) Comments(ctx context.Context, actorID, taskID int64) ([]entities.TaskComment, error) {
 	task, err := s.tasks.FindByID(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -183,13 +184,13 @@ func (s *TaskService) Comments(ctx context.Context, actorID, taskID int64) ([]do
 	return s.comments.ListComments(ctx, taskID)
 }
 
-func (s *TaskService) Stats(ctx context.Context, actorID, teamID int64) (*domain.TeamStats, error) {
+func (s *TaskService) Stats(ctx context.Context, actorID, teamID int64) (*entities.TeamStats, error) {
 	role, err := s.teams.RoleForUser(ctx, teamID, actorID)
 	if err != nil {
 		return nil, err
 	}
-	if role != domain.RoleOwner && role != domain.RoleAdmin {
-		return nil, domain.ErrForbidden
+	if role != entities.RoleOwner && role != entities.RoleAdmin {
+		return nil, errrors.ErrForbidden
 	}
 	return s.stats.TeamStats(ctx, teamID)
 }

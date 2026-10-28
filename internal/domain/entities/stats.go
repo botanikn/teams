@@ -1,4 +1,4 @@
-package domain
+package entities
 
 type TeamStats struct {
 	TasksByStatus         map[string]int64  `json:"tasks_by_status"`

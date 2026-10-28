@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
 )
 
 type userResponse struct {
@@ -70,15 +70,15 @@ type taskCommentStatResponse struct {
 	CommentCount int64 `json:"comment_count"`
 }
 
-func toUserResponse(user *domain.User) userResponse {
+func toUserResponse(user *entities.User) userResponse {
 	return userResponse{ID: user.ID, Email: user.Email, Name: user.Name, CreatedAt: user.CreatedAt}
 }
 
-func toTeamResponse(team domain.Team) teamResponse {
+func toTeamResponse(team entities.Team) teamResponse {
 	return teamResponse{ID: team.ID, Name: team.Name, OwnerName: team.OwnerName, CreatedAt: team.CreatedAt}
 }
 
-func toTeamResponses(teams []domain.Team) []teamResponse {
+func toTeamResponses(teams []entities.Team) []teamResponse {
 	responses := make([]teamResponse, len(teams))
 	for i := range teams {
 		responses[i] = toTeamResponse(teams[i])
@@ -86,7 +86,7 @@ func toTeamResponses(teams []domain.Team) []teamResponse {
 	return responses
 }
 
-func toTaskResponse(task *domain.Task) taskResponse {
+func toTaskResponse(task *entities.Task) taskResponse {
 	return taskResponse{
 		ID: task.ID, TeamID: task.TeamID, Title: task.Title, Description: task.Description,
 		Status: task.Status, CreatedBy: task.CreatedByName, AssigneeID: task.AssigneeID,
@@ -94,7 +94,7 @@ func toTaskResponse(task *domain.Task) taskResponse {
 	}
 }
 
-func toTaskResponses(tasks []domain.Task) []taskResponse {
+func toTaskResponses(tasks []entities.Task) []taskResponse {
 	responses := make([]taskResponse, len(tasks))
 	for i := range tasks {
 		responses[i] = toTaskResponse(&tasks[i])
@@ -102,7 +102,7 @@ func toTaskResponses(tasks []domain.Task) []taskResponse {
 	return responses
 }
 
-func toTaskHistoryResponses(items []domain.TaskHistory) []taskHistoryResponse {
+func toTaskHistoryResponses(items []entities.TaskHistory) []taskHistoryResponse {
 	responses := make([]taskHistoryResponse, len(items))
 	for i := range items {
 		responses[i] = taskHistoryResponse{
@@ -113,14 +113,14 @@ func toTaskHistoryResponses(items []domain.TaskHistory) []taskHistoryResponse {
 	return responses
 }
 
-func toTaskCommentResponse(comment *domain.TaskComment) taskCommentResponse {
+func toTaskCommentResponse(comment *entities.TaskComment) taskCommentResponse {
 	return taskCommentResponse{
 		ID: comment.ID, TaskID: comment.TaskID, UserID: comment.UserID,
 		Content: comment.Content, CreatedAt: comment.CreatedAt,
 	}
 }
 
-func toTaskCommentResponses(comments []domain.TaskComment) []taskCommentResponse {
+func toTaskCommentResponses(comments []entities.TaskComment) []taskCommentResponse {
 	responses := make([]taskCommentResponse, len(comments))
 	for i := range comments {
 		responses[i] = toTaskCommentResponse(&comments[i])
@@ -128,7 +128,7 @@ func toTaskCommentResponses(comments []domain.TaskComment) []taskCommentResponse
 	return responses
 }
 
-func toTeamStatsResponse(stats *domain.TeamStats) teamStatsResponse {
+func toTeamStatsResponse(stats *entities.TeamStats) teamStatsResponse {
 	response := teamStatsResponse{
 		TasksByStatus:         stats.TasksByStatus,
 		AverageClosureSeconds: stats.AverageClosureSeconds,

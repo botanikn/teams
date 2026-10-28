@@ -2,11 +2,11 @@ package ports
 
 import (
 	"context"
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
 )
 
 type UserRepository interface {
-	Create(context.Context, *domain.User) error
-	FindByEmail(context.Context, string) (*domain.User, error)
-	FindByID(context.Context, int64) (*domain.User, error)
+	Create(context.Context, *entities.User) error
+	FindByEmail(context.Context, string) (*entities.User, error)
+	FindByID(context.Context, int64) (*entities.User, error)
 }

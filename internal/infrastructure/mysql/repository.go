@@ -9,7 +9,8 @@ import (
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
+	"task-api/internal/domain/errrors"
 )
 
 type Repository struct {
@@ -18,7 +19,7 @@ type Repository struct {
 
 func NewRepository(db *sql.DB) *Repository { return &Repository{db: db} }
 
-func (r *Repository) CreateAtomic(ctx context.Context, team *domain.Team) error {
+func (r *Repository) CreateAtomic(ctx context.Context, team *entities.Team) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -38,7 +39,7 @@ func (r *Repository) CreateAtomic(ctx context.Context, team *domain.Team) error 
 	return tx.Commit()
 }
 
-func (r *Repository) ListForUser(ctx context.Context, userID int64) ([]domain.Team, error) {
+func (r *Repository) ListForUser(ctx context.Context, userID int64) ([]entities.Team, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT t.id, t.name, u.name, t.created_at
 		FROM teams t
 		JOIN team_members m ON m.team_id = t.id
@@ -48,9 +49,9 @@ func (r *Repository) ListForUser(ctx context.Context, userID int64) ([]domain.Te
 		return nil, err
 	}
 	defer rows.Close()
-	teams := make([]domain.Team, 0)
+	teams := make([]entities.Team, 0)
 	for rows.Next() {
-		var team domain.Team
+		var team entities.Team
 		if err := rows.Scan(&team.ID, &team.Name, &team.OwnerName, &team.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -59,16 +60,16 @@ func (r *Repository) ListForUser(ctx context.Context, userID int64) ([]domain.Te
 	return teams, rows.Err()
 }
 
-func (r *Repository) RoleForUser(ctx context.Context, teamID, userID int64) (domain.Role, error) {
-	var role domain.Role
+func (r *Repository) RoleForUser(ctx context.Context, teamID, userID int64) (entities.Role, error) {
+	var role entities.Role
 	err := r.db.QueryRowContext(ctx, `SELECT role FROM team_members WHERE team_id = ? AND user_id = ?`, teamID, userID).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", domain.ErrForbidden
+		return "", errrors.ErrForbidden
 	}
 	return role, err
 }
 
-func (r *Repository) AddMemberAtomic(ctx context.Context, teamID, userID int64, role domain.Role) error {
+func (r *Repository) AddMemberAtomic(ctx context.Context, teamID, userID int64, role entities.Role) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -80,7 +81,7 @@ func (r *Repository) AddMemberAtomic(ctx context.Context, teamID, userID int64, 
 	return tx.Commit()
 }
 
-func (r *Repository) UpdateMemberRole(ctx context.Context, teamID, userID int64, role domain.Role) error {
+func (r *Repository) UpdateMemberRole(ctx context.Context, teamID, userID int64, role entities.Role) error {
 	result, err := r.db.ExecContext(ctx, `UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ? AND role <> 'owner'`, role, teamID, userID)
 	if err != nil {
 		return mapDBError(err)
@@ -96,7 +97,7 @@ func (r *Repository) RemoveMember(ctx context.Context, teamID, userID int64) err
 	return requireAffected(result)
 }
 
-func (r *Repository) Create(ctx context.Context, task *domain.Task, changedBy int64) error {
+func (r *Repository) Create(ctx context.Context, task *entities.Task, changedBy int64) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -143,7 +144,7 @@ func (r *Repository) Create(ctx context.Context, task *domain.Task, changedBy in
 	return nil
 }
 
-func (r *Repository) List(ctx context.Context, filter domain.TaskFilter) ([]domain.Task, error) {
+func (r *Repository) List(ctx context.Context, filter entities.TaskFilter) ([]entities.Task, error) {
 	query := `SELECT t.id, t.team_id, t.title, t.description, t.status, t.created_by, u.name, t.assignee_id, t.created_at, t.updated_at, t.closed_at, t.version
 		FROM tasks t JOIN users u ON u.id = t.created_by WHERE t.team_id = ?`
 	args := []any{filter.TeamID}
@@ -162,7 +163,7 @@ func (r *Repository) List(ctx context.Context, filter domain.TaskFilter) ([]doma
 		return nil, err
 	}
 	defer rows.Close()
-	tasks := make([]domain.Task, 0)
+	tasks := make([]entities.Task, 0)
 	for rows.Next() {
 		task, err := scanTask(rows)
 		if err != nil {
@@ -175,8 +176,8 @@ func (r *Repository) List(ctx context.Context, filter domain.TaskFilter) ([]doma
 
 type rowScanner interface{ Scan(...any) error }
 
-func scanTask(row rowScanner) (domain.Task, error) {
-	var task domain.Task
+func scanTask(row rowScanner) (entities.Task, error) {
+	var task entities.Task
 	var assignee sql.NullInt64
 	var closed sql.NullTime
 	if err := row.Scan(&task.ID, &task.TeamID, &task.Title, &task.Description, &task.Status, &task.CreatedBy, &task.CreatedByName, &assignee, &task.CreatedAt, &task.UpdatedAt, &closed, &task.Version); err != nil {
@@ -191,11 +192,11 @@ func scanTask(row rowScanner) (domain.Task, error) {
 	return task, nil
 }
 
-func (r *Repository) FindByID(ctx context.Context, id int64) (*domain.Task, error) {
+func (r *Repository) FindByID(ctx context.Context, id int64) (*entities.Task, error) {
 	task, err := scanTask(r.db.QueryRowContext(ctx, `SELECT t.id, t.team_id, t.title, t.description, t.status, t.created_by, u.name, t.assignee_id, t.created_at, t.updated_at, t.closed_at, t.version
 		FROM tasks t JOIN users u ON u.id = t.created_by WHERE t.id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, domain.ErrNotFound
+		return nil, errrors.ErrNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -207,18 +208,18 @@ func (r *Repository) CheckVersion(ctx context.Context, taskID, expectedVersion i
 	var version int64
 	err := r.db.QueryRowContext(ctx, `SELECT version FROM tasks WHERE id = ?`, taskID).Scan(&version)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrNotFound
+		return errrors.ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
 	if version != expectedVersion {
-		return domain.ErrConflict
+		return errrors.ErrConflict
 	}
 	return nil
 }
 
-func (r *Repository) UpdateAtomic(ctx context.Context, task *domain.Task, changedBy, expectedVersion int64, changes json.RawMessage) error {
+func (r *Repository) UpdateAtomic(ctx context.Context, task *entities.Task, changedBy, expectedVersion int64, changes json.RawMessage) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -229,22 +230,22 @@ func (r *Repository) UpdateAtomic(ctx context.Context, task *domain.Task, change
 	var currentStatus string
 	if err := tx.QueryRowContext(ctx, `SELECT team_id, created_by, assignee_id, version, status FROM tasks WHERE id = ? FOR UPDATE`, task.ID).
 		Scan(&currentTeam, &currentCreator, &currentAssignee, &currentVersion, &currentStatus); errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrNotFound
+		return errrors.ErrNotFound
 	} else if err != nil {
 		return err
 	}
-	var actorRole domain.Role
+	var actorRole entities.Role
 	if err := tx.QueryRowContext(ctx, `SELECT role FROM team_members WHERE team_id = ? AND user_id = ? FOR UPDATE`, currentTeam, changedBy).
 		Scan(&actorRole); errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrForbidden
+		return errrors.ErrForbidden
 	} else if err != nil {
 		return err
 	}
-	canEditAny := actorRole == domain.RoleOwner || actorRole == domain.RoleAdmin
+	canEditAny := actorRole == entities.RoleOwner || actorRole == entities.RoleAdmin
 	isCreator := currentCreator == changedBy
 	isAssignee := currentAssignee.Valid && currentAssignee.Int64 == changedBy
 	if !canEditAny && !isCreator && !isAssignee {
-		return domain.ErrForbidden
+		return errrors.ErrForbidden
 	}
 	if !canEditAny && !isCreator && isAssignee {
 		var changedFields map[string]json.RawMessage
@@ -253,12 +254,12 @@ func (r *Repository) UpdateAtomic(ctx context.Context, task *domain.Task, change
 		}
 		for field := range changedFields {
 			if field != "status" {
-				return domain.ErrForbidden
+				return errrors.ErrForbidden
 			}
 		}
 	}
 	if currentVersion != expectedVersion {
-		return domain.ErrConflict
+		return errrors.ErrConflict
 	}
 	if task.AssigneeID != nil {
 		if err := ensureTeamMember(ctx, tx, task.TeamID, *task.AssigneeID); err != nil {
@@ -311,12 +312,12 @@ func ensureTeamMember(ctx context.Context, queryer executor, teamID, userID int6
 	var exists int
 	err := queryer.QueryRowContext(ctx, `SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ? FOR UPDATE`, teamID, userID).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrInvalid
+		return errrors.ErrInvalid
 	}
 	return err
 }
 
-func (r *Repository) ListHistory(ctx context.Context, taskID int64) ([]domain.TaskHistory, error) {
+func (r *Repository) ListHistory(ctx context.Context, taskID int64) ([]entities.TaskHistory, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT h.id, h.task_id, h.changed_by, h.changes, h.created_at, u.name
 		FROM task_history h
 		JOIN tasks t ON t.id = h.task_id
@@ -326,9 +327,9 @@ func (r *Repository) ListHistory(ctx context.Context, taskID int64) ([]domain.Ta
 		return nil, err
 	}
 	defer rows.Close()
-	history := make([]domain.TaskHistory, 0)
+	history := make([]entities.TaskHistory, 0)
 	for rows.Next() {
-		var item domain.TaskHistory
+		var item entities.TaskHistory
 		var creatorName string
 		if err := rows.Scan(&item.ID, &item.TaskID, &item.ChangedBy, &item.Changes, &item.CreatedAt, &creatorName); err != nil {
 			return nil, err
@@ -374,7 +375,7 @@ func replaceHistoryCreatorID(changes json.RawMessage, creatorName string) (json.
 	return updated, nil
 }
 
-func (r *Repository) AddComment(ctx context.Context, comment *domain.TaskComment) error {
+func (r *Repository) AddComment(ctx context.Context, comment *entities.TaskComment) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -382,13 +383,13 @@ func (r *Repository) AddComment(ctx context.Context, comment *domain.TaskComment
 	defer tx.Rollback()
 	var teamID int64
 	if err := tx.QueryRowContext(ctx, `SELECT team_id FROM tasks WHERE id = ? FOR UPDATE`, comment.TaskID).Scan(&teamID); errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrNotFound
+		return errrors.ErrNotFound
 	} else if err != nil {
 		return err
 	}
 	if err := ensureTeamMember(ctx, tx, teamID, comment.UserID); err != nil {
-		if errors.Is(err, domain.ErrInvalid) {
-			return domain.ErrForbidden
+		if errors.Is(err, errrors.ErrInvalid) {
+			return errrors.ErrForbidden
 		}
 		return err
 	}
@@ -406,15 +407,15 @@ func (r *Repository) AddComment(ctx context.Context, comment *domain.TaskComment
 	return tx.Commit()
 }
 
-func (r *Repository) ListComments(ctx context.Context, taskID int64) ([]domain.TaskComment, error) {
+func (r *Repository) ListComments(ctx context.Context, taskID int64) ([]entities.TaskComment, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id, task_id, user_id, content, created_at FROM task_comments WHERE task_id = ? ORDER BY id`, taskID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	comments := make([]domain.TaskComment, 0)
+	comments := make([]entities.TaskComment, 0)
 	for rows.Next() {
-		var comment domain.TaskComment
+		var comment entities.TaskComment
 		if err := rows.Scan(&comment.ID, &comment.TaskID, &comment.UserID, &comment.Content, &comment.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -423,7 +424,7 @@ func (r *Repository) ListComments(ctx context.Context, taskID int64) ([]domain.T
 	return comments, rows.Err()
 }
 
-func (r *Repository) TeamStats(ctx context.Context, teamID int64) (*domain.TeamStats, error) {
+func (r *Repository) TeamStats(ctx context.Context, teamID int64) (*entities.TeamStats, error) {
 	const query = `WITH status_counts AS (
 		SELECT status, COUNT(*) AS task_count FROM tasks WHERE team_id = ? GROUP BY status
 	), top_assignees AS (
@@ -446,7 +447,7 @@ func (r *Repository) TeamStats(ctx context.Context, teamID int64) (*domain.TeamS
 		COALESCE((SELECT JSON_ARRAYAGG(JSON_OBJECT('task_id', task_id, 'comment_count', comment_count)) FROM comments), JSON_ARRAY()),
 		COALESCE((SELECT SUM(comment_count) FROM comments), 0)`
 	var statuses, top, comments []byte
-	stats := new(domain.TeamStats)
+	stats := new(entities.TeamStats)
 	if err := r.db.QueryRowContext(ctx, query, teamID, teamID, teamID, teamID).Scan(&statuses, &top, &stats.AverageClosureSeconds, &comments, &stats.TotalComments); err != nil {
 		return nil, err
 	}
@@ -468,7 +469,7 @@ func requireAffected(result sql.Result) error {
 		return err
 	}
 	if count == 0 {
-		return domain.ErrNotFound
+		return errrors.ErrNotFound
 	}
 	return nil
 }
@@ -476,10 +477,10 @@ func requireAffected(result sql.Result) error {
 func mapDBError(err error) error {
 	var mysqlErr *mysqlDriver.MySQLError
 	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-		return domain.ErrConflict
+		return errrors.ErrConflict
 	}
 	if errors.As(err, &mysqlErr) && (mysqlErr.Number == 1452 || mysqlErr.Number == 1451) {
-		return domain.ErrInvalid
+		return errrors.ErrInvalid
 	}
 	return fmt.Errorf("mysql: %w", err)
 }

@@ -4,7 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
+	"task-api/internal/domain/errrors"
 	"task-api/internal/domain/ports"
 )
 
@@ -17,32 +18,32 @@ func NewTeamService(teams ports.TeamRepository, users ports.UserRepository) *Tea
 	return &TeamService{teams: teams, users: users}
 }
 
-func (s *TeamService) Create(ctx context.Context, userID int64, name string) (*domain.Team, error) {
+func (s *TeamService) Create(ctx context.Context, userID int64, name string) (*entities.Team, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 150 {
-		return nil, domain.ErrInvalid
+		return nil, errrors.ErrInvalid
 	}
-	team := &domain.Team{Name: name, CreatedBy: userID}
+	team := &entities.Team{Name: name, CreatedBy: userID}
 	if err := s.teams.CreateAtomic(ctx, team); err != nil {
 		return nil, err
 	}
 	return team, nil
 }
 
-func (s *TeamService) List(ctx context.Context, userID int64) ([]domain.Team, error) {
+func (s *TeamService) List(ctx context.Context, userID int64) ([]entities.Team, error) {
 	return s.teams.ListForUser(ctx, userID)
 }
 
-func (s *TeamService) Invite(ctx context.Context, actorID, teamID, userID int64, role domain.Role) error {
-	if role != domain.RoleMember && role != domain.RoleAdmin {
-		return domain.ErrInvalid
+func (s *TeamService) Invite(ctx context.Context, actorID, teamID, userID int64, role entities.Role) error {
+	if role != entities.RoleMember && role != entities.RoleAdmin {
+		return errrors.ErrInvalid
 	}
 	actorRole, err := s.teams.RoleForUser(ctx, teamID, actorID)
 	if err != nil {
 		return err
 	}
-	if actorRole != domain.RoleOwner && actorRole != domain.RoleAdmin {
-		return domain.ErrForbidden
+	if actorRole != entities.RoleOwner && actorRole != entities.RoleAdmin {
+		return errrors.ErrForbidden
 	}
 	if _, err := s.users.FindByID(ctx, userID); err != nil {
 		return err
@@ -50,23 +51,23 @@ func (s *TeamService) Invite(ctx context.Context, actorID, teamID, userID int64,
 	return s.teams.AddMemberAtomic(ctx, teamID, userID, role)
 }
 
-func (s *TeamService) SetMemberRole(ctx context.Context, actorID, teamID, userID int64, role domain.Role) error {
-	if role != domain.RoleMember && role != domain.RoleAdmin {
-		return domain.ErrInvalid
+func (s *TeamService) SetMemberRole(ctx context.Context, actorID, teamID, userID int64, role entities.Role) error {
+	if role != entities.RoleMember && role != entities.RoleAdmin {
+		return errrors.ErrInvalid
 	}
 	actorRole, err := s.teams.RoleForUser(ctx, teamID, actorID)
 	if err != nil {
 		return err
 	}
-	if actorRole != domain.RoleOwner {
-		return domain.ErrForbidden
+	if actorRole != entities.RoleOwner {
+		return errrors.ErrForbidden
 	}
 	targetRole, err := s.teams.RoleForUser(ctx, teamID, userID)
 	if err != nil {
 		return err
 	}
-	if targetRole == domain.RoleOwner {
-		return domain.ErrForbidden
+	if targetRole == entities.RoleOwner {
+		return errrors.ErrForbidden
 	}
 	if targetRole == role {
 		return nil
@@ -79,15 +80,15 @@ func (s *TeamService) RemoveMember(ctx context.Context, actorID, teamID, userID 
 	if err != nil {
 		return err
 	}
-	if actorRole != domain.RoleOwner && actorRole != domain.RoleAdmin {
-		return domain.ErrForbidden
+	if actorRole != entities.RoleOwner && actorRole != entities.RoleAdmin {
+		return errrors.ErrForbidden
 	}
 	targetRole, err := s.teams.RoleForUser(ctx, teamID, userID)
 	if err != nil {
 		return err
 	}
-	if targetRole == domain.RoleOwner {
-		return domain.ErrForbidden
+	if targetRole == entities.RoleOwner {
+		return errrors.ErrForbidden
 	}
 	return s.teams.RemoveMember(ctx, teamID, userID)
 }

@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"task-api/internal/domain"
+	"task-api/internal/domain/entities"
 )
 
 func TestTaskResponseExposesCreatorNameWithoutInternalID(t *testing.T) {
-	raw, err := json.Marshal(toTaskResponse(&domain.Task{
+	raw, err := json.Marshal(toTaskResponse(&entities.Task{
 		ID: 3, TeamID: 2, CreatedBy: 42, CreatedByName: "Alice", Version: 1,
 	}))
 	if err != nil {
@@ -22,7 +22,7 @@ func TestTaskResponseExposesCreatorNameWithoutInternalID(t *testing.T) {
 }
 
 func TestUserResponseDoesNotExposePasswordHash(t *testing.T) {
-	raw, err := json.Marshal(toUserResponse(&domain.User{
+	raw, err := json.Marshal(toUserResponse(&entities.User{
 		ID: 1, Email: "alice@example.com", Name: "Alice", PasswordHash: "must-not-leak",
 	}))
 	if err != nil {
