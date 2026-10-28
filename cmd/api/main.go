@@ -63,10 +63,10 @@ func run() error {
 	repository := mysqlinfra.NewRepository(db)
 	userRepository := mysqlinfra.NewUserRepository(db)
 	tokens := security.NewJWTIssuer(cfg.JWTSecret, cfg.JWTTTL)
-	cachedTasks := rediscache.NewCachedTaskRepository(repository, redisClient)
+	cachedTasks := rediscache.NewCachedTaskRepository(repository, repository, repository, repository, redisClient)
 	authService := application.NewAuthService(userRepository, security.BcryptHasher{}, tokens)
 	teamService := application.NewTeamService(repository, userRepository)
-	taskService := application.NewTaskService(cachedTasks, repository)
+	taskService := application.NewTaskService(cachedTasks, cachedTasks, cachedTasks, cachedTasks, repository)
 	handler := httpapi.NewHandler(authService, teamService, taskService, tokens)
 
 	server := &http.Server{

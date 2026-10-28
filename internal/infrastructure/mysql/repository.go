@@ -203,6 +203,21 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*domain.Task, erro
 	return &task, nil
 }
 
+func (r *Repository) CheckVersion(ctx context.Context, taskID, expectedVersion int64) error {
+	var version int64
+	err := r.db.QueryRowContext(ctx, `SELECT version FROM tasks WHERE id = ?`, taskID).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if version != expectedVersion {
+		return domain.ErrConflict
+	}
+	return nil
+}
+
 func (r *Repository) UpdateAtomic(ctx context.Context, task *domain.Task, changedBy, expectedVersion int64, changes json.RawMessage) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

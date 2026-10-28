@@ -68,7 +68,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, user)
+	writeJSON(w, http.StatusCreated, toUserResponse(user))
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +99,7 @@ func (h *Handler) createTeam(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, team)
+	writeJSON(w, http.StatusCreated, toTeamResponse(*team))
 }
 
 func (h *Handler) listTeams(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +108,7 @@ func (h *Handler) listTeams(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, teams)
+	writeJSON(w, http.StatusOK, toTeamResponses(teams))
 }
 
 func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +195,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, task)
+	writeJSON(w, http.StatusCreated, toTaskResponse(task))
 }
 
 func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +227,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, tasks)
+	writeJSON(w, http.StatusOK, toTaskResponses(tasks))
 }
 
 func (h *Handler) updateTask(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +252,7 @@ func (h *Handler) updateTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, task)
+	writeJSON(w, http.StatusOK, toTaskResponse(task))
 }
 
 func (h *Handler) taskHistory(w http.ResponseWriter, r *http.Request) {
@@ -265,7 +265,7 @@ func (h *Handler) taskHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, toTaskHistoryResponses(items))
 }
 
 func (h *Handler) addComment(w http.ResponseWriter, r *http.Request) {
@@ -284,7 +284,7 @@ func (h *Handler) addComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, comment)
+	writeJSON(w, http.StatusCreated, toTaskCommentResponse(comment))
 }
 
 func (h *Handler) listComments(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +297,7 @@ func (h *Handler) listComments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, toTaskCommentResponses(items))
 }
 
 func (h *Handler) teamStats(w http.ResponseWriter, r *http.Request) {
@@ -310,7 +310,7 @@ func (h *Handler) teamStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, stats)
+	writeJSON(w, http.StatusOK, toTeamStatsResponse(stats))
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {

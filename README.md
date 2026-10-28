@@ -4,7 +4,7 @@ REST API для управления задачами команд с ролев
 
 ## Запуск
 
-Требуются Docker и Docker Compose. Скопируйте `.env.example` в `.env`, замените пароли MySQL/Redis и `JWT_SECRET` длинными случайными значениями, затем запустите:
+Требуются Docker и Docker Compose. Для копирования токена в примерах запросов также нужен `jq`. Скопируйте `.env.example` в `.env`, замените пароли MySQL/Redis и `JWT_SECRET` длинными случайными значениями, затем запустите:
 
 ```sh
 docker compose up --build
@@ -15,7 +15,7 @@ docker compose up --build
 ## API
 
 - `POST /api/v1/register` — `{ "email", "password", "name" }`; пароль не короче 8 символов.
-- `POST /api/v1/login` — `{ "email", "password" }`; возвращает Bearer JWT.
+- `POST /api/v1/login` — `{ "email", "password" }`; возвращает JWT.
 - `POST /api/v1/teams` — `{ "name" }`; создатель автоматически становится `owner`.
 - `GET /api/v1/teams` — команды текущего пользователя.
 - `POST /api/v1/teams/{id}/invite` — `{ "user_id", "role": "member"|"admin" }`; owner/admin.
@@ -29,15 +29,48 @@ docker compose up --build
 - `GET /api/v1/tasks/{id}/comments` — комментарии задачи.
 - `GET /api/v1/teams/{team_id}/stats` — отчет только для owner/admin этой команды.
 
-Для всех маршрутов, кроме регистрации, входа и health check, требуется заголовок `Authorization: Bearer <token>`.
+Для всех маршрутов, кроме регистрации, входа и health check, требуется заголовок `Authorization: Bearer <JWT>`.
+
+### Примеры запросов
+
+Регистрация и получение токена:
+
+```sh
+curl -X POST http://localhost:8080/api/v1/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice@example.com","password":"correct-horse-42","name":"Alice"}'
+
+TOKEN=$(curl -sS -X POST http://localhost:8080/api/v1/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice@example.com","password":"correct-horse-42"}' | jq -r .token)
+```
+
+Создание команды, задачи и получение списка:
+
+```sh
+TEAM_ID=$(curl -sS -X POST http://localhost:8080/api/v1/teams \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Platform"}' | jq -r .id)
+
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"team_id\":$TEAM_ID,\"title\":\"Prepare release\",\"description\":\"Release checklist\",\"status\":\"todo\"}"
+
+curl "http://localhost:8080/api/v1/tasks?team_id=$TEAM_ID&status=todo&limit=20&offset=0" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Для примеров остальных операций и схем запросов/ответов откройте Swagger/OpenAPI по адресу `/openapi.yaml`.
 
 ## Доступ и надежность
 
 `owner` и `admin` редактируют все задачи команды; `member` — созданные им задачи и задачи, назначенные ему. Исполнитель может менять только статус. Исполнитель всегда должен состоять в команде. Доступ к истории и комментариям требует членства в команде.
 
-Изменение задачи и запись истории выполняются одной транзакцией. `version` проверяется под `SELECT ... FOR UPDATE`, поэтому конкурирующее устаревшее обновление получает `409`. Создание команды и назначение owner также атомарны. Список задач кешируется в Redis на 5 минут по команде и всем фильтрам; создание/обновление задачи инвалидирует кеш команды.
+Изменение задачи и запись истории выполняются одной транзакцией. `version` проверяется под `SELECT ... FOR UPDATE`, поэтому конкурентное устаревшее обновление получает `409`. Создание команды и назначение owner также атомарны. Список задач кешируется в Redis на 5 минут по команде и всем фильтрам; создание/обновление задачи инвалидирует кеш команды. Если Redis не принимает инвалидацию после успешной записи в MySQL, операция остается успешной, ошибка записывается в лог, а кеш истекает по TTL.
 
-Статистика выполняется одним MySQL 8 CTE-запросом и возвращает количества задач по статусам, трех лучших исполнителей по завершенным за 30 дней задачам, среднее время закрытия и количество комментариев на каждую задачу.
+Статистика выполняется одним MySQL 8 CTE-запросом и возвращает количества задач по статусам, трех лучших исполнителей по завершенным за 30 дней задачам, среднее время закрытия и количество комментариев на каждую задачу. Интеграционный тест отчета можно запустить с отдельной тестовой MySQL-базой через переменную окружения `MYSQL_TEST_DSN`; без нее тест пропускается.
 
 ## Конфигурация
 

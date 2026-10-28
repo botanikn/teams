@@ -11,12 +11,15 @@ import (
 )
 
 type TaskService struct {
-	tasks ports.TaskRepository
-	teams ports.TeamRepository
+	tasks    ports.TaskRepository
+	history  ports.TaskHistoryRepository
+	comments ports.TaskCommentRepository
+	stats    ports.TeamStatsRepository
+	teams    ports.TeamRepository
 }
 
-func NewTaskService(tasks ports.TaskRepository, teams ports.TeamRepository) *TaskService {
-	return &TaskService{tasks: tasks, teams: teams}
+func NewTaskService(tasks ports.TaskRepository, history ports.TaskHistoryRepository, comments ports.TaskCommentRepository, stats ports.TeamStatsRepository, teams ports.TeamRepository) *TaskService {
+	return &TaskService{tasks: tasks, history: history, comments: comments, stats: stats, teams: teams}
 }
 
 func (s *TaskService) Create(ctx context.Context, actorID, teamID int64, title, description, status string, assigneeID *int64) (*domain.Task, error) {
@@ -123,6 +126,9 @@ func (s *TaskService) Update(ctx context.Context, actorID, taskID, version int64
 		addChange("assignee_id", oldAssignee, newAssignee)
 	}
 	if len(changes) == 0 {
+		if err := s.tasks.CheckVersion(ctx, taskID, version); err != nil {
+			return nil, err
+		}
 		return task, nil
 	}
 	encodedChanges, err := json.Marshal(changes)
@@ -144,7 +150,7 @@ func (s *TaskService) History(ctx context.Context, actorID, taskID int64) ([]dom
 	if _, err := s.teams.RoleForUser(ctx, task.TeamID, actorID); err != nil {
 		return nil, err
 	}
-	return s.tasks.ListHistory(ctx, taskID)
+	return s.history.ListHistory(ctx, taskID)
 }
 
 func (s *TaskService) AddComment(ctx context.Context, actorID, taskID int64, content string) (*domain.TaskComment, error) {
@@ -160,7 +166,7 @@ func (s *TaskService) AddComment(ctx context.Context, actorID, taskID int64, con
 		return nil, domain.ErrInvalid
 	}
 	comment := &domain.TaskComment{TaskID: taskID, UserID: actorID, Content: content}
-	if err := s.tasks.AddComment(ctx, comment); err != nil {
+	if err := s.comments.AddComment(ctx, comment); err != nil {
 		return nil, err
 	}
 	return comment, nil
@@ -174,7 +180,7 @@ func (s *TaskService) Comments(ctx context.Context, actorID, taskID int64) ([]do
 	if _, err := s.teams.RoleForUser(ctx, task.TeamID, actorID); err != nil {
 		return nil, err
 	}
-	return s.tasks.ListComments(ctx, taskID)
+	return s.comments.ListComments(ctx, taskID)
 }
 
 func (s *TaskService) Stats(ctx context.Context, actorID, teamID int64) (*domain.TeamStats, error) {
@@ -185,7 +191,7 @@ func (s *TaskService) Stats(ctx context.Context, actorID, teamID int64) (*domain
 	if role != domain.RoleOwner && role != domain.RoleAdmin {
 		return nil, domain.ErrForbidden
 	}
-	return s.tasks.TeamStats(ctx, teamID)
+	return s.stats.TeamStats(ctx, teamID)
 }
 
 func validStatus(status string) bool {
